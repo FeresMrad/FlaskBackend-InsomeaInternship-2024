@@ -1,8 +1,10 @@
-from flask import Flask, render_template, url_for, request, redirect
+from flask import Flask, jsonify, request, redirect
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql://root:@127.0.0.1/taskdb'
 db = SQLAlchemy(app)
 
@@ -11,50 +13,34 @@ class Todo(db.Model):
     content = db.Column(db.String(200), nullable=False)
     date_created = db.Column(db.DateTime, default=datetime.utcnow)
 
-    def __rep__(self):
+    def __repr__(self):
         return '<Task %r>' % self.id
 
-@app.route('/', methods=['POST', 'GET'])
-def index():
+@app.route('/api/tasks', methods=['GET', 'POST'])
+def tasks():
     if request.method == 'POST':
-        task_content = request.form['content']
+        task_content = request.json['content']
         new_task = Todo(content=task_content)
-
-        try:
-            db.session.add(new_task)
-            db.session.commit()
-            return redirect ('/')
-        except:
-            return 'There was an issue adding your task'
+        db.session.add(new_task)
+        db.session.commit()
+        return jsonify({'id': new_task.id, 'content': new_task.content, 'date_created': new_task.date_created}), 201
     else:
         tasks = Todo.query.order_by(Todo.date_created).all()
-        return render_template('index.html', tasks=tasks)
+        tasks_list = [{'id': task.id, 'content': task.content, 'date_created': task.date_created} for task in tasks]
+        return jsonify(tasks_list)
 
-@app.route('/delete/<int:id>')
-def delete(id):
-    task_to_delete = Todo.query.get_or_404(id)
-    try:
-        db.session.delete(task_to_delete)
-        db.session.commit()
-        return redirect('/')
-    except:
-        return 'There was a problem deleting the task'
-
-@app.route('/update/<int:id>', methods=['GET','POST'])
-def update(id):
+@app.route('/api/tasks/<int:id>', methods=['DELETE', 'PUT'])
+def task(id):
     task = Todo.query.get_or_404(id)
-    if request.method == 'POST':
-        task.content = request.form['content']
-        try:
-            db.session.commit()
-            return redirect('/')
-        except:
-            return 'There was an issue updating the task'
+    if request.method == 'DELETE':
+        db.session.delete(task)
+        db.session.commit()
+        return jsonify({'result': 'Task deleted'})
     else:
-        return render_template('update.html', task=task)
-
-with app.app_context():
-    db.create_all()
+        data = request.json
+        task.content = data['content']
+        db.session.commit()
+        return jsonify({'id': task.id, 'content': task.content, 'date_created': task.date_created})
 
 if __name__ == "__main__":
     app.run(debug=True)
